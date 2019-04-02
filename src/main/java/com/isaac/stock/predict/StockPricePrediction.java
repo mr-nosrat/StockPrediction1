@@ -6,6 +6,10 @@ import com.isaac.stock.representation.StockData;
 import com.isaac.stock.representation.StockDataSetIterator;
 import com.isaac.stock.utils.PlotUtil;
 import javafx.util.Pair;
+import org.bytedeco.javacpp.Loader;
+import org.bytedeco.javacpp.cublas;
+import org.bytedeco.javacpp.cuda;
+import org.bytedeco.javacpp.cusparse;
 import org.deeplearning4j.nn.multilayer.MultiLayerNetwork;
 import org.deeplearning4j.util.ModelSerializer;
 import org.nd4j.linalg.api.ndarray.INDArray;
@@ -22,6 +26,7 @@ import java.util.NoSuchElementException;
 /**
  * Created by zhanghao on 26/7/17.
  * Modified by zhanghao on 28/9/17.
+ *
  * @author ZHANG HAO
  */
 public class StockPricePrediction {
@@ -30,7 +35,17 @@ public class StockPricePrediction {
 
     private static int exampleLength = 22; // time series length, assume 22 working days per month
 
-    public static void main (String[] args) throws IOException {
+    public static void main(String[] args) throws IOException {
+//        try {
+//            Loader.load(cusparse.class);
+//        } catch (UnsatisfiedLinkError e) {
+//            String path = Loader.cacheResource(cuda.class, "windows-x86_64/jnicusparse.dll").getPath();
+//            try {
+//                new ProcessBuilder("C:/Users/nosrat/Downloads/Dependencies_x64_Release/DependenciesGui.exe", path).start().waitFor();
+//            } catch (InterruptedException e1) {
+//                e1.printStackTrace();
+//            }
+//        }
         String file = new ClassPathResource("Irka.Part.csv").getFile().getAbsolutePath();
         String symbol = "Irka.Part"; // stock name
         int batchSize = 64; // mini-batch size
@@ -69,38 +84,78 @@ public class StockPricePrediction {
         } else {
             double max = iterator.getMaxNum(category);
             double min = iterator.getMinNum(category);
-            predictPriceOneAhead(net, test, max, min, category ,iterator.getTest1());
+            predictPriceOneAhead(net, test, max, min, category, iterator.getTest1());
         }
         log.info("Done...");
     }
 
-    /** Predict one feature of a stock one-day ahead */
-    private static void predictPriceOneAhead (MultiLayerNetwork net, List<Pair<INDArray, INDArray>> testData, double max, double min, PriceCategory category,List<StockData> test1) {
-        double[] predicts = new double[testData.size()];
-        double[] actuals = new double[testData.size()];
+    /**
+     * Predict one feature of a stock one-day ahead
+     */
+    private static void predictPriceOneAhead(MultiLayerNetwork net, List<Pair<INDArray, INDArray>> testData, double max, double min, PriceCategory category, List<StockData> test1) {
+        double[] predicts = new double[testData.size()+1];
+        double[] actuals = new double[testData.size()+1];
 
-        for (int i = 0; i < testData.size(); i++) {
+        for (int i = 0; i < predicts.length; i++) {
+            if (i == predicts.length-1) {
+                INDArray input = Nd4j.create(new int[]{exampleLength, 5}, 'f');
+                int r = i - exampleLength;
+                for (int j = r; j < test1.size(); j++) {
+                    StockData stock = test1.get(j);
+                    input.putScalar(new int[]{j - r, 1}, (stock.getClose() - min) / (max - min));
+                    log.info(stock.getDate() +" - " + String.valueOf(stock.getClose()));
+                }
+                INDArray label = Nd4j.create(new int[]{1}, 'f');
+//            if (category.equals(PriceCategory.ALL)) {
+//                label = Nd4j.create(new int[]{VECTOR_SIZE}, 'f'); // ordering is set as 'f', faster construct
+//                label.putScalar(new int[] {0}, stock.getOpen());
+//                label.putScalar(new int[] {1}, stock.getClose());
+//                label.putScalar(new int[] {2}, stock.getLow());
+//                label.putScalar(new int[] {3}, stock.getHigh());
+//                label.putScalar(new int[] {4}, stock.getVolume());
+//            } else {
+//                label = Nd4j.create(new int[] {1}, 'f');
+//                switch (category) {
+//                    case OPEN: label.putScalar(new int[] {0}, stock.getOpen()); break;
+//                    case CLOSE: label.putScalar(new int[] {0}, stock.getClose()); break;
+//                    case LOW: label.putScalar(new int[] {0}, stock.getLow()); break;
+//                    case HIGH: label.putScalar(new int[] {0}, stock.getHigh()); break;
+//                    case VOLUME: label.putScalar(new int[] {0}, stock.getVolume()); break;
+//                    default: throw new NoSuchElementException();
+//                }
+//            }
+
+                testData.add(new Pair<>(input, label));
+                StockData stockData = new StockData();
+                stockData.setDate("Next Day");
+                test1.add(stockData);
+            }
             predicts[i] = net.rnnTimeStep(testData.get(i).getKey()).getDouble(exampleLength - 1) * (max - min) + min;
             try {
-                actuals[i] = test1.get(i + exampleLength+1).getClose(); //testData.get(i).getValue().getDouble(0);
-            }
-            catch (Exception ee){
+                actuals[i] = test1.get(i + exampleLength - 1).getClose(); //testData.get(i).getValue().getDouble(0);
+            } catch (Exception ee) {
                 actuals[i] = 0;
             }
         }
+
+
 //        log.info("Print out Predictions and Actual Values...");
         log.info("Date,Predict,Actual");
-        for (int i = 0; i < predicts.length; i++) log.info(test1.get(i+exampleLength-1).getDate()+ ":" + predicts[i] + "," + actuals[i]);
+        for (int i = 0; i < predicts.length; i++)
+//            log.info(  predicts[i] + "," + actuals[i]);
+            log.info(test1.get(i + exampleLength-1).getDate() + ":" + predicts[i] + "," + actuals[i]);
         log.info("Plot...");
         PlotUtil.plot(predicts, actuals, String.valueOf(category));
     }
 
-    private static void predictPriceMultiple (MultiLayerNetwork net, List<Pair<INDArray, INDArray>> testData, double max, double min) {
+    private static void predictPriceMultiple(MultiLayerNetwork net, List<Pair<INDArray, INDArray>> testData, double max, double min) {
         // TODO
     }
 
-    /** Predict all the features (open, close, low, high prices and volume) of a stock one-day ahead */
-    private static void predictAllCategories (MultiLayerNetwork net, List<Pair<INDArray, INDArray>> testData, INDArray max, INDArray min) {
+    /**
+     * Predict all the features (open, close, low, high prices and volume) of a stock one-day ahead
+     */
+    private static void predictAllCategories(MultiLayerNetwork net, List<Pair<INDArray, INDArray>> testData, INDArray max, INDArray min) {
         INDArray[] predicts = new INDArray[testData.size()];
         INDArray[] actuals = new INDArray[testData.size()];
         for (int i = 0; i < testData.size(); i++) {
@@ -120,12 +175,23 @@ public class StockPricePrediction {
             }
             String name;
             switch (n) {
-                case 0: name = "Stock OPEN Price"; break;
-                case 1: name = "Stock CLOSE Price"; break;
-                case 2: name = "Stock LOW Price"; break;
-                case 3: name = "Stock HIGH Price"; break;
-                case 4: name = "Stock VOLUME Amount"; break;
-                default: throw new NoSuchElementException();
+                case 0:
+                    name = "Stock OPEN Price";
+                    break;
+                case 1:
+                    name = "Stock CLOSE Price";
+                    break;
+                case 2:
+                    name = "Stock LOW Price";
+                    break;
+                case 3:
+                    name = "Stock HIGH Price";
+                    break;
+                case 4:
+                    name = "Stock VOLUME Amount";
+                    break;
+                default:
+                    throw new NoSuchElementException();
             }
             PlotUtil.plot(pred, actu, name);
         }

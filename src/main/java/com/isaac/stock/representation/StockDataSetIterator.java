@@ -163,7 +163,7 @@ public class StockDataSetIterator implements DataSetIterator {
     	int window = exampleLength - predictLength;
     	List<Pair<INDArray, INDArray>> test = new ArrayList<>();
     	for (int i = 0; i < stockDataList.size() - window; i++) {
-    		INDArray input = Nd4j.create(new int[] {exampleLength, VECTOR_SIZE}, 'f');
+    		INDArray input = Nd4j.create(new int[] {exampleLength, VECTOR_SIZE},'f');
     		for (int j = i; j < i + exampleLength; j++) {
     			StockData stock = stockDataList.get(j);
     			input.putScalar(new int[] {j - i, 0}, (stock.getOpen() - minArray[0]) / (maxArray[0] - minArray[0]));
