@@ -141,10 +141,10 @@ public class StockPricePrediction {
                 int pil=i;
 //                if(!addNextDay)
                     pil=i-1;
-                stock.setVolume(4470147);
+//                stock.setVolume(4470147);
                 stock.setOpen(1971);
-                stock.setLow(1950);
-                stock.setHigh(2043);
+//                stock.setLow(1950);
+//                stock.setHigh(2043);
                 input.putScalar(new int[]{21, 0}, (stock.getOpen() - min.getDouble(0)) / (max.getDouble(0) - min.getDouble(0)));
                 input.putScalar(new int[]{21, 1}, (predicts[pil] - min.getDouble(1)) / (max.getDouble(1) - min.getDouble(1)));
                 input.putScalar(new int[]{21, 2}, (stock.getLow() - min.getDouble(2)) / (max.getDouble(2) - min.getDouble(2)));
